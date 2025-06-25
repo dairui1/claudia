@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { Plus, RefreshCw, ArrowLeft } from 'lucide-react';
+import { Plus, RefreshCw, ArrowLeft, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toast, ToastContainer } from '@/components/ui/toast';
+import { SelectComponent } from '@/components/ui/select';
 import SessionCard from './SessionCard';
 import SessionPreview from './SessionPreview';
 import SessionDiffView from './SessionDiffView';
 import GlobalSessionControls from './GlobalSessionControls';
 import { SessionInfo, SessionEvent, SessionConfig } from '@/types/multi-session';
+import { api, type Project } from '@/lib/api';
 
 interface MultiSessionDashboardProps {
   onBack?: () => void;
@@ -22,7 +24,9 @@ export default function MultiSessionDashboard({ onBack }: MultiSessionDashboardP
   const [sessions, setSessions] = useState<Map<string, SessionInfo>>(new Map());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [selectedProject] = useState<string>('');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [loadingProjects, setLoadingProjects] = useState(false);
   const [config] = useState<SessionConfig>({
     auto_yes: false,
     max_output_buffer: 10000,
@@ -35,6 +39,7 @@ export default function MultiSessionDashboard({ onBack }: MultiSessionDashboardP
 
   useEffect(() => {
     loadSessions();
+    loadProjects();
     
     const unlistenPromise = listen<SessionEvent>('session-event', (event) => {
       handleSessionEvent(event.payload);
@@ -44,6 +49,22 @@ export default function MultiSessionDashboard({ onBack }: MultiSessionDashboardP
       unlistenPromise.then(unlisten => unlisten());
     };
   }, []);
+
+  const loadProjects = async () => {
+    try {
+      setLoadingProjects(true);
+      const projectList = await api.listProjects();
+      setProjects(projectList);
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+      setToast({
+        message: 'Failed to load projects',
+        type: 'error',
+      });
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
 
   const loadSessions = async () => {
     try {
@@ -192,7 +213,7 @@ export default function MultiSessionDashboard({ onBack }: MultiSessionDashboardP
           <div className="flex items-center gap-2">
             <Button
               onClick={createSession}
-              disabled={isCreating}
+              disabled={isCreating || !selectedProject}
               size="sm"
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -207,6 +228,35 @@ export default function MultiSessionDashboard({ onBack }: MultiSessionDashboardP
             </Button>
           </div>
         </div>
+
+        {/* Project Selection */}
+        <div className="mt-4 flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <FolderOpen className="w-4 h-4 text-muted-foreground" />
+            <Label className="text-sm font-medium">Project:</Label>
+          </div>
+          <div className="min-w-[300px]">
+            <SelectComponent
+              value={selectedProject}
+              onValueChange={setSelectedProject}
+              options={projects.map(project => ({
+                value: project.id,
+                label: project.path,
+              }))}
+              placeholder={loadingProjects ? "Loading projects..." : "Select a project"}
+              disabled={loadingProjects || isCreating}
+            />
+          </div>
+          <Button
+            onClick={loadProjects}
+            variant="outline"
+            size="sm"
+            disabled={loadingProjects}
+          >
+            <RefreshCw className={`w-4 h-4 ${loadingProjects ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+
         <GlobalSessionControls sessions={Array.from(sessions.values())} />
       </div>
 
@@ -214,6 +264,9 @@ export default function MultiSessionDashboard({ onBack }: MultiSessionDashboardP
         <div className="w-1/3 border-r">
           <ScrollArea className="h-full">
             <div className="p-4 space-y-2">
+              <div className="text-sm text-muted-foreground mb-2">
+                Total: {sessions.size}
+              </div>
               {Array.from(sessions.values()).map(session => (
                 <SessionCard
                   key={session.id}
