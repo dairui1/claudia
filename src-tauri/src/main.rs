@@ -4,6 +4,7 @@
 mod checkpoint;
 mod claude_binary;
 mod commands;
+mod multi_session;
 mod process;
 mod sandbox;
 
@@ -33,6 +34,11 @@ use commands::mcp::{
     mcp_read_project_config, mcp_remove, mcp_reset_project_choices, mcp_save_project_config,
     mcp_serve, mcp_test_connection,
 };
+use commands::multi_session::{
+    create_multi_session, get_session_diff, get_multi_session_output,
+    list_active_sessions, pause_session, resume_session, send_input, terminate_session,
+    update_session_config,
+};
 use commands::sandbox::{
     clear_sandbox_violations, create_sandbox_profile, create_sandbox_rule, delete_sandbox_profile,
     delete_sandbox_rule, export_all_sandbox_profiles, export_sandbox_profile,
@@ -44,8 +50,9 @@ use commands::screenshot::{capture_url_screenshot, cleanup_screenshot_temp_files
 use commands::usage::{
     get_session_stats, get_usage_by_date_range, get_usage_details, get_usage_stats,
 };
+use multi_session::SessionManager;
 use process::ProcessRegistryState;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 fn main() {
@@ -94,6 +101,15 @@ fn main() {
 
             // Initialize Claude process state
             app.manage(ClaudeProcessState::default());
+
+            // Initialize multi-session manager
+            let db_conn = init_database(&app.handle()).expect("Failed to initialize database for multi-session");
+            let session_manager = Arc::new(tokio::sync::Mutex::new(SessionManager::new(
+                Arc::new(tokio::sync::Mutex::new(db_conn)),
+                5, // max concurrent sessions
+            )));
+            
+            app.manage(session_manager);
 
             Ok(())
         })
@@ -193,7 +209,17 @@ fn main() {
             mcp_read_project_config,
             mcp_save_project_config,
             capture_url_screenshot,
-            cleanup_screenshot_temp_files
+            cleanup_screenshot_temp_files,
+            // Multi-session commands
+            create_multi_session,
+            list_active_sessions,
+            terminate_session,
+            pause_session,
+            resume_session,
+            send_input,
+            get_multi_session_output,
+            get_session_diff,
+            update_session_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

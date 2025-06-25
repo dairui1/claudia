@@ -2,7 +2,7 @@ use std::time::Duration;
 use tokio::time::interval;
 use tokio::sync::broadcast;
 use regex::Regex;
-use crate::multi_session::{SessionManager, SessionEvent, SessionStatus};
+use crate::multi_session::{SessionManager, SessionStatus};
 
 pub struct AutoYesManager {
     patterns: Vec<PromptPattern>,

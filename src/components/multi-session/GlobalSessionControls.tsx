@@ -1,17 +1,16 @@
-import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { PauseCircle, PlayCircle, StopCircle, Zap } from 'lucide-react';
+import { PauseCircle, PlayCircle, StopCircle } from 'lucide-react';
 import { SessionInfo } from '@/types/multi-session';
-import { useToast } from '@/components/ui/use-toast';
+import { useState } from 'react';
 
 interface GlobalSessionControlsProps {
   sessions: SessionInfo[];
 }
 
 export default function GlobalSessionControls({ sessions }: GlobalSessionControlsProps) {
-  const { toast } = useToast();
+  const [, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
 
   const sessionCounts = sessions.reduce((acc, session) => {
     acc.total++;
@@ -25,9 +24,9 @@ export default function GlobalSessionControls({ sessions }: GlobalSessionControl
     );
 
     if (runningSessions.length === 0) {
-      toast({
-        title: 'No sessions to pause',
-        description: 'All sessions are already paused or terminated',
+      setToast({
+        message: 'All sessions are already paused or terminated',
+        type: 'info',
       });
       return;
     }
@@ -38,15 +37,14 @@ export default function GlobalSessionControls({ sessions }: GlobalSessionControl
           invoke('pause_session', { sessionId: session.id })
         )
       );
-      toast({
-        title: 'Sessions paused',
-        description: `Paused ${runningSessions.length} sessions`,
+      setToast({
+        message: `Paused ${runningSessions.length} sessions`,
+        type: 'success',
       });
     } catch (error) {
-      toast({
-        title: 'Failed to pause sessions',
-        description: String(error),
-        variant: 'destructive',
+      setToast({
+        message: String(error),
+        type: 'error',
       });
     }
   };
@@ -55,9 +53,9 @@ export default function GlobalSessionControls({ sessions }: GlobalSessionControl
     const pausedSessions = sessions.filter(s => s.status === 'paused');
 
     if (pausedSessions.length === 0) {
-      toast({
-        title: 'No sessions to resume',
-        description: 'No paused sessions found',
+      setToast({
+        message: 'No paused sessions found',
+        type: 'info',
       });
       return;
     }
@@ -68,15 +66,14 @@ export default function GlobalSessionControls({ sessions }: GlobalSessionControl
           invoke('resume_session', { sessionId: session.id })
         )
       );
-      toast({
-        title: 'Sessions resumed',
-        description: `Resumed ${pausedSessions.length} sessions`,
+      setToast({
+        message: `Resumed ${pausedSessions.length} sessions`,
+        type: 'success',
       });
     } catch (error) {
-      toast({
-        title: 'Failed to resume sessions',
-        description: String(error),
-        variant: 'destructive',
+      setToast({
+        message: String(error),
+        type: 'error',
       });
     }
   };
@@ -85,9 +82,9 @@ export default function GlobalSessionControls({ sessions }: GlobalSessionControl
     const activeSessions = sessions.filter(s => s.status !== 'terminated');
 
     if (activeSessions.length === 0) {
-      toast({
-        title: 'No sessions to terminate',
-        description: 'All sessions are already terminated',
+      setToast({
+        message: 'All sessions are already terminated',
+        type: 'info',
       });
       return;
     }
@@ -102,15 +99,14 @@ export default function GlobalSessionControls({ sessions }: GlobalSessionControl
           invoke('terminate_session', { sessionId: session.id })
         )
       );
-      toast({
-        title: 'Sessions terminated',
-        description: `Terminated ${activeSessions.length} sessions`,
+      setToast({
+        message: `Terminated ${activeSessions.length} sessions`,
+        type: 'success',
       });
     } catch (error) {
-      toast({
-        title: 'Failed to terminate sessions',
-        description: String(error),
-        variant: 'destructive',
+      setToast({
+        message: String(error),
+        type: 'error',
       });
     }
   };

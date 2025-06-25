@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock, broadcast};
 use anyhow::{Result, Context, bail};
-use crate::Database;
+use rusqlite::Connection;
 use super::{
     Session, SessionConfig, SessionEvent, SessionInfo, SessionStatus,
     GitWorktree, process::ProcessManager, auto_yes::AutoYesManager,
@@ -12,22 +12,25 @@ use super::{
 
 pub struct SessionManager {
     sessions: Arc<RwLock<HashMap<String, Arc<Session>>>>,
-    db: Arc<Database>,
+    db: Arc<Mutex<Connection>>,
     event_tx: broadcast::Sender<SessionEvent>,
     event_rx: broadcast::Receiver<SessionEvent>,
+    shutdown_tx: broadcast::Sender<()>,
     auto_yes_manager: Arc<AutoYesManager>,
     max_concurrent_sessions: usize,
 }
 
 impl SessionManager {
-    pub fn new(db: Arc<Database>, max_concurrent_sessions: usize) -> Self {
+    pub fn new(db: Arc<Mutex<Connection>>, max_concurrent_sessions: usize) -> Self {
         let (event_tx, event_rx) = broadcast::channel(1000);
+        let (shutdown_tx, _) = broadcast::channel(1);
         
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             db,
             event_tx,
             event_rx,
+            shutdown_tx,
             auto_yes_manager: Arc::new(AutoYesManager::new()),
             max_concurrent_sessions,
         }
@@ -81,7 +84,7 @@ impl SessionManager {
         self.store_session_in_db(&session).await?;
         
         // Start Claude process
-        let mut child = ProcessManager::spawn_claude_session(
+        let child = ProcessManager::spawn_claude_session(
             &session,
             self.event_tx.clone(),
         ).await?;
@@ -164,7 +167,7 @@ impl SessionManager {
         }
         
         // Restart Claude process
-        let mut child = ProcessManager::spawn_claude_session(
+        let child = ProcessManager::spawn_claude_session(
             session,
             self.event_tx.clone(),
         ).await?;
@@ -241,38 +244,37 @@ impl SessionManager {
         current_config.auto_yes = config.auto_yes;
         
         // Update in database
-        sqlx::query!(
-            "UPDATE multi_sessions SET auto_yes = ?, updated_at = datetime('now') WHERE id = ?",
-            config.auto_yes,
-            session_id
-        )
-        .execute(&*self.db.pool)
-        .await?;
+        let db = self.db.lock().await;
+        db.execute(
+            "UPDATE multi_sessions SET auto_yes = ?1, updated_at = datetime('now') WHERE id = ?2",
+            rusqlite::params![config.auto_yes, session_id]
+        )?;
         
         Ok(())
     }
     
     // Database operations
     async fn store_session_in_db(&self, session: &Session) -> Result<()> {
-        sqlx::query!(
+        let db = self.db.lock().await;
+        db.execute(
             r#"
             INSERT INTO multi_sessions (
                 id, project_id, worktree_path, branch_name, status,
                 created_at, updated_at, auto_yes, output_log
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
             "#,
-            session.id,
-            session.project_id,
-            session.worktree_path.to_str(),
-            session.branch_name,
-            "running",
-            session.created_at.to_rfc3339(),
-            session.created_at.to_rfc3339(),
-            session.config.auto_yes,
-            ""
-        )
-        .execute(&*self.db.pool)
-        .await?;
+            rusqlite::params![
+                session.id,
+                session.project_id,
+                session.worktree_path.to_str(),
+                session.branch_name,
+                "running",
+                session.created_at.to_rfc3339(),
+                session.created_at.to_rfc3339(),
+                session.config.auto_yes,
+                ""
+            ]
+        )?;
         
         Ok(())
     }
@@ -283,21 +285,19 @@ impl SessionManager {
         status: SessionStatus,
     ) -> Result<()> {
         let status_str = serde_json::to_string(&status)?;
+        let db = self.db.lock().await;
         
-        sqlx::query!(
-            "UPDATE multi_sessions SET status = ?, updated_at = datetime('now') WHERE id = ?",
-            status_str,
-            session_id
-        )
-        .execute(&*self.db.pool)
-        .await?;
+        db.execute(
+            "UPDATE multi_sessions SET status = ?1, updated_at = datetime('now') WHERE id = ?2",
+            rusqlite::params![status_str, session_id]
+        )?;
         
         Ok(())
     }
     
     pub async fn start_auto_yes_daemon(&self) {
         let manager = self.clone();
-        let shutdown_rx = self.event_tx.subscribe();
+        let shutdown_rx = self.shutdown_tx.subscribe();
         let auto_yes_manager = self.auto_yes_manager.clone();
         
         tokio::spawn(async move {
@@ -314,6 +314,7 @@ impl Clone for SessionManager {
             db: self.db.clone(),
             event_tx: self.event_tx.clone(),
             event_rx: self.event_tx.subscribe(),
+            shutdown_tx: self.shutdown_tx.clone(),
             auto_yes_manager: self.auto_yes_manager.clone(),
             max_concurrent_sessions: self.max_concurrent_sessions,
         }

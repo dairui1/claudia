@@ -1,25 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { Plus, RefreshCw, Settings } from 'lucide-react';
+import { Plus, RefreshCw, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useToast } from '@/components/ui/use-toast';
+import { Toast, ToastContainer } from '@/components/ui/toast';
 import SessionCard from './SessionCard';
 import SessionPreview from './SessionPreview';
 import SessionDiffView from './SessionDiffView';
 import GlobalSessionControls from './GlobalSessionControls';
 import { SessionInfo, SessionEvent, SessionConfig } from '@/types/multi-session';
 
-export default function MultiSessionDashboard() {
+interface MultiSessionDashboardProps {
+  onBack?: () => void;
+}
+
+export default function MultiSessionDashboard({ onBack }: MultiSessionDashboardProps) {
   const [sessions, setSessions] = useState<Map<string, SessionInfo>>(new Map());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [selectedProject, setSelectedProject] = useState<string>('');
-  const [config, setConfig] = useState<SessionConfig>({
+  const [selectedProject] = useState<string>('');
+  const [config] = useState<SessionConfig>({
     auto_yes: false,
     max_output_buffer: 10000,
     environment_vars: [],
@@ -27,7 +31,7 @@ export default function MultiSessionDashboard() {
     branch_prefix: 'claudia-session',
     claude_args: [],
   });
-  const { toast } = useToast();
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
 
   useEffect(() => {
     loadSessions();
@@ -77,10 +81,9 @@ export default function MultiSessionDashboard() {
         removeSession(event.data.session_id);
         break;
       case 'Error':
-        toast({
-          title: 'Session Error',
-          description: event.data.error,
-          variant: 'destructive',
+        setToast({
+          message: event.data.error,
+          type: 'error',
         });
         break;
     }
@@ -140,10 +143,9 @@ export default function MultiSessionDashboard() {
 
   const createSession = async () => {
     if (!selectedProject) {
-      toast({
-        title: 'No project selected',
-        description: 'Please select a project to create a session',
-        variant: 'destructive',
+      setToast({
+        message: 'Please select a project to create a session',
+        type: 'error',
       });
       return;
     }
@@ -154,15 +156,14 @@ export default function MultiSessionDashboard() {
         projectId: selectedProject,
         config,
       });
-      toast({
-        title: 'Session created',
-        description: `Session ${sessionId.slice(0, 8)} created successfully`,
+      setToast({
+        message: `Session ${sessionId.slice(0, 8)} created successfully`,
+        type: 'success',
       });
     } catch (error) {
-      toast({
-        title: 'Failed to create session',
-        description: String(error),
-        variant: 'destructive',
+      setToast({
+        message: String(error),
+        type: 'error',
       });
     } finally {
       setIsCreating(false);
@@ -175,7 +176,19 @@ export default function MultiSessionDashboard() {
     <div className="flex flex-col h-full">
       <div className="border-b p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold">Multi-Session Manager</h2>
+          <div className="flex items-center gap-4">
+            {onBack && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onBack}
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+            )}
+            <h2 className="text-2xl font-bold">Multi-Session Manager</h2>
+          </div>
           <div className="flex items-center gap-2">
             <Button
               onClick={createSession}
@@ -220,7 +233,7 @@ export default function MultiSessionDashboard() {
 
         <div className="flex-1">
           {activeSession ? (
-            <Tabs defaultValue="preview" className="h-full">
+            <Tabs value="preview" onValueChange={() => {}} className="h-full">
               <TabsList className="w-full justify-start rounded-none border-b">
                 <TabsTrigger value="preview">Output</TabsTrigger>
                 <TabsTrigger value="diff">Changes</TabsTrigger>
@@ -251,10 +264,9 @@ export default function MultiSessionDashboard() {
                           });
                           loadSessions();
                         } catch (error) {
-                          toast({
-                            title: 'Failed to update config',
-                            description: String(error),
-                            variant: 'destructive',
+                          setToast({
+                            message: String(error),
+                            type: 'error',
                           });
                         }
                       }}
@@ -270,6 +282,17 @@ export default function MultiSessionDashboard() {
           )}
         </div>
       </div>
+      
+      {/* Toast Container */}
+      <ToastContainer>
+        {toast && (
+          <Toast
+            message={toast.message}
+            type={toast.type}
+            onDismiss={() => setToast(null)}
+          />
+        )}
+      </ToastContainer>
     </div>
   );
 }

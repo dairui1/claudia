@@ -1,9 +1,8 @@
-import React from 'react';
+import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, RotateCcw } from 'lucide-react';
+import { Play, Pause, Square } from 'lucide-react';
 import { SessionInfo } from '@/types/multi-session';
-import { useToast } from '@/components/ui/use-toast';
 
 interface SessionControlsProps {
   session: SessionInfo;
@@ -11,21 +10,20 @@ interface SessionControlsProps {
 }
 
 export default function SessionControls({ session, onUpdate }: SessionControlsProps) {
-  const { toast } = useToast();
+  const [, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
 
   const handlePause = async () => {
     try {
       await invoke('pause_session', { sessionId: session.id });
-      toast({
-        title: 'Session paused',
-        description: `Session ${session.id.slice(0, 8)} has been paused`,
+      setToast({
+        message: `Session ${session.id.slice(0, 8)} has been paused`,
+        type: 'success',
       });
       onUpdate?.();
     } catch (error) {
-      toast({
-        title: 'Failed to pause session',
-        description: String(error),
-        variant: 'destructive',
+      setToast({
+        message: String(error),
+        type: 'error',
       });
     }
   };
@@ -33,16 +31,15 @@ export default function SessionControls({ session, onUpdate }: SessionControlsPr
   const handleResume = async () => {
     try {
       await invoke('resume_session', { sessionId: session.id });
-      toast({
-        title: 'Session resumed',
-        description: `Session ${session.id.slice(0, 8)} has been resumed`,
+      setToast({
+        message: `Session ${session.id.slice(0, 8)} has been resumed`,
+        type: 'success',
       });
       onUpdate?.();
     } catch (error) {
-      toast({
-        title: 'Failed to resume session',
-        description: String(error),
-        variant: 'destructive',
+      setToast({
+        message: String(error),
+        type: 'error',
       });
     }
   };
@@ -54,16 +51,15 @@ export default function SessionControls({ session, onUpdate }: SessionControlsPr
 
     try {
       await invoke('terminate_session', { sessionId: session.id });
-      toast({
-        title: 'Session terminated',
-        description: `Session ${session.id.slice(0, 8)} has been terminated`,
+      setToast({
+        message: `Session ${session.id.slice(0, 8)} has been terminated`,
+        type: 'success',
       });
       onUpdate?.();
     } catch (error) {
-      toast({
-        title: 'Failed to terminate session',
-        description: String(error),
-        variant: 'destructive',
+      setToast({
+        message: String(error),
+        type: 'error',
       });
     }
   };

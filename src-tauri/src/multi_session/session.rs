@@ -43,6 +43,7 @@ impl Default for SessionConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct Session {
     pub id: String,
     pub project_id: String,
@@ -56,6 +57,25 @@ pub struct Session {
     pub updated_at: Arc<Mutex<DateTime<Utc>>>,
     pub config: SessionConfig,
     pub error_message: Arc<Mutex<Option<String>>>,
+}
+
+impl Clone for Session {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            project_id: self.project_id.clone(),
+            project_path: self.project_path.clone(),
+            worktree_path: self.worktree_path.clone(),
+            branch_name: self.branch_name.clone(),
+            process: self.process.clone(),
+            status: self.status.clone(),
+            output_buffer: self.output_buffer.clone(),
+            created_at: self.created_at,
+            updated_at: self.updated_at.clone(),
+            config: self.config.clone(),
+            error_message: self.error_message.clone(),
+        }
+    }
 }
 
 impl Session {

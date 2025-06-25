@@ -1,48 +1,37 @@
-use tauri::{AppHandle, Manager, State};
-use serde_json::json;
+use tauri::State;
 use crate::multi_session::{SessionManager, SessionConfig, SessionInfo, DiffStats};
-use crate::Database;
 use std::sync::Arc;
-use std::path::PathBuf;
+use tokio::sync::Mutex;
 
 #[tauri::command]
 pub async fn create_multi_session(
-    app: AppHandle,
+    session_manager: State<'_, Arc<Mutex<SessionManager>>>,
     project_id: String,
+    project_path: String,
     config: SessionConfig,
-    session_manager: State<'_, Arc<SessionManager>>,
 ) -> Result<String, String> {
-    // Get project path from database
-    let db = app.state::<Arc<Database>>();
-    let project = sqlx::query!(
-        "SELECT path FROM projects WHERE id = ?",
-        project_id
-    )
-    .fetch_one(&*db.pool)
-    .await
-    .map_err(|e| format!("Failed to fetch project: {}", e))?;
-    
-    let project_path = PathBuf::from(project.path);
-    
-    session_manager
-        .create_session(project_id, project_path, config)
+    let manager = session_manager.lock().await;
+    manager
+        .create_session(project_id, project_path.into(), config)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn list_active_sessions(
-    session_manager: State<'_, Arc<SessionManager>>,
+    session_manager: State<'_, Arc<Mutex<SessionManager>>>,
 ) -> Result<Vec<SessionInfo>, String> {
-    Ok(session_manager.list_active_sessions().await)
+    let manager = session_manager.lock().await;
+    Ok(manager.list_active_sessions().await)
 }
 
 #[tauri::command]
 pub async fn terminate_session(
+    session_manager: State<'_, Arc<Mutex<SessionManager>>>,
     session_id: String,
-    session_manager: State<'_, Arc<SessionManager>>,
 ) -> Result<(), String> {
-    session_manager
+    let manager = session_manager.lock().await;
+    manager
         .terminate_session(&session_id)
         .await
         .map_err(|e| e.to_string())
@@ -50,10 +39,11 @@ pub async fn terminate_session(
 
 #[tauri::command]
 pub async fn pause_session(
+    session_manager: State<'_, Arc<Mutex<SessionManager>>>,
     session_id: String,
-    session_manager: State<'_, Arc<SessionManager>>,
 ) -> Result<(), String> {
-    session_manager
+    let manager = session_manager.lock().await;
+    manager
         .pause_session(&session_id)
         .await
         .map_err(|e| e.to_string())
@@ -61,10 +51,11 @@ pub async fn pause_session(
 
 #[tauri::command]
 pub async fn resume_session(
+    session_manager: State<'_, Arc<Mutex<SessionManager>>>,
     session_id: String,
-    session_manager: State<'_, Arc<SessionManager>>,
 ) -> Result<(), String> {
-    session_manager
+    let manager = session_manager.lock().await;
+    manager
         .resume_session(&session_id)
         .await
         .map_err(|e| e.to_string())
@@ -72,23 +63,26 @@ pub async fn resume_session(
 
 #[tauri::command]
 pub async fn send_input(
+    session_manager: State<'_, Arc<Mutex<SessionManager>>>,
     session_id: String,
     input: String,
-    session_manager: State<'_, Arc<SessionManager>>,
 ) -> Result<(), String> {
-    session_manager
+    let manager = session_manager.lock().await;
+    manager
         .send_input(&session_id, &input)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_session_output(
+pub async fn get_multi_session_output(
+    session_manager: State<'_, Arc<Mutex<SessionManager>>>,
     session_id: String,
-    lines: usize,
-    session_manager: State<'_, Arc<SessionManager>>,
+    lines: Option<usize>,
 ) -> Result<Vec<String>, String> {
-    session_manager
+    let manager = session_manager.lock().await;
+    let lines = lines.unwrap_or(50);
+    manager
         .get_session_output(&session_id, lines)
         .await
         .map_err(|e| e.to_string())
@@ -96,10 +90,11 @@ pub async fn get_session_output(
 
 #[tauri::command]
 pub async fn get_session_diff(
+    session_manager: State<'_, Arc<Mutex<SessionManager>>>,
     session_id: String,
-    session_manager: State<'_, Arc<SessionManager>>,
 ) -> Result<DiffStats, String> {
-    session_manager
+    let manager = session_manager.lock().await;
+    manager
         .get_session_diff(&session_id)
         .await
         .map_err(|e| e.to_string())
@@ -107,24 +102,14 @@ pub async fn get_session_diff(
 
 #[tauri::command]
 pub async fn update_session_config(
+    session_manager: State<'_, Arc<Mutex<SessionManager>>>,
     session_id: String,
     config: SessionConfig,
-    session_manager: State<'_, Arc<SessionManager>>,
 ) -> Result<(), String> {
-    session_manager
+    let manager = session_manager.lock().await;
+    manager
         .update_session_config(&session_id, config)
         .await
         .map_err(|e| e.to_string())
 }
 
-// Setup function to initialize the session event forwarding
-pub fn setup_session_events(app: &AppHandle, session_manager: Arc<SessionManager>) {
-    let app_handle = app.clone();
-    let mut event_rx = session_manager.subscribe_events();
-    
-    tauri::async_runtime::spawn(async move {
-        while let Ok(event) = event_rx.recv().await {
-            let _ = app_handle.emit("session-event", &event);
-        }
-    });
-}

@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Send, Download, Trash2 } from 'lucide-react';
 import { SessionInfo } from '@/types/multi-session';
-import { useToast } from '@/components/ui/use-toast';
 
 interface SessionPreviewProps {
   session: SessionInfo;
@@ -15,8 +14,8 @@ export default function SessionPreview({ session }: SessionPreviewProps) {
   const [output, setOutput] = useState<string[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { toast } = useToast();
 
   useEffect(() => {
     loadOutput();
@@ -52,10 +51,9 @@ export default function SessionPreview({ session }: SessionPreviewProps) {
       });
       setInput('');
     } catch (error) {
-      toast({
-        title: 'Failed to send input',
-        description: String(error),
-        variant: 'destructive',
+      setToast({
+        message: String(error),
+        type: 'error',
       });
     } finally {
       setIsLoading(false);

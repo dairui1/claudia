@@ -9,7 +9,6 @@ pub use session::{Session, SessionStatus, SessionConfig};
 pub use git_worktree::GitWorktree;
 
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
